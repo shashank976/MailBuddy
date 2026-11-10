@@ -4,6 +4,10 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from agents.conversation_action_resolver import (
+    ConversationAction,
+)
+from agents.cleanup_agent import CleanupRecommendation
 
 PRIORITY_RANK = {
     "low": 0,
@@ -27,18 +31,20 @@ class ConversationCard(BaseModel):
     dashboard_group: str
 
     summary: str = Field(min_length=1, max_length=600)
+
+    action_status: str
+    requires_action: bool
     suggested_action: str | None
+    action_reason: str
 
     needs_review: bool
-
-    # Opens the full conversation in Gmail.
     gmail_url: str
+    cleanup: CleanupRecommendation | None = None
 
 
 def group_conversations(
     analyzed_emails: list[dict[str, Any]]
 ) -> list[list[dict[str, Any]]]:
-    """Group analyzed messages by Gmail thread ID."""
 
     threads = defaultdict(list)
 
@@ -49,9 +55,7 @@ def group_conversations(
     conversations = []
 
     for messages in threads.values():
-        messages.sort(
-            key=lambda message: message["received_at_ms"]
-        )
+        messages.sort(key=lambda m: m["received_at_ms"])
         conversations.append(messages)
 
     conversations.sort(
@@ -64,46 +68,36 @@ def group_conversations(
 
 def build_conversation_card(
     messages: list[dict[str, Any]],
-    combined_summary: str
+    combined_summary: str,
+    resolved_action: ConversationAction,
 ) -> ConversationCard:
-    """Create one dashboard card for a Gmail conversation."""
 
     if not messages:
-        raise ValueError("Cannot build card from empty messages")
+        raise ValueError("Cannot build an empty conversation card")
 
     latest = messages[-1]
 
-    # Preserve the highest observed importance
-    # rather than blindly taking the newest priority.
-    highest_priority_message = max(
+    highest = max(
         messages,
-        key=lambda message: PRIORITY_RANK[
-            message["priority_result"].priority
+        key=lambda m: PRIORITY_RANK[
+            m["priority_result"].priority
         ]
-    )
+    )["priority_result"]
 
-    highest_priority = highest_priority_message["priority_result"]
+    needs_review = resolved_action.needs_review
 
-    # Keep the newest action information.
-    # This is provisional: conversation-level action
-    # resolution will be a separate feature.
-    latest_action = latest["action_result"]
-
-    if latest_action.requires_action:
+    if resolved_action.requires_action or needs_review:
         dashboard_group = "needs_attention"
-    elif any(
-        message["priority_result"].needs_review
-        or message["action_result"].needs_review
-        for message in messages
-    ):
-        dashboard_group = "needs_attention"
-    elif highest_priority.priority in ("critical", "high"):
+
+    elif highest.priority in ("critical", "high"):
         dashboard_group = "important_updates"
+
     elif all(
-        message["priority_result"].category == "promotion"
-        for message in messages
+        m["priority_result"].category == "promotion"
+        for m in messages
     ):
         dashboard_group = "cleanup"
+
     else:
         dashboard_group = "low_priority"
 
@@ -111,33 +105,29 @@ def build_conversation_card(
 
     return ConversationCard(
         thread_id=thread_id,
-        message_ids=[
-            message["email_id"]
-            for message in messages
-        ],
+        message_ids=[m["email_id"] for m in messages],
         message_count=len(messages),
         subject=latest["subject"],
         senders=list(dict.fromkeys(
-            message["sender"]
-            for message in messages
+            m["sender"] for m in messages
         )),
         latest_received_at_ms=latest["received_at_ms"],
-        priority=highest_priority.priority,
-        category=highest_priority.category,
+
+        priority=highest.priority,
+        category=highest.category,
         dashboard_group=dashboard_group,
+
         summary=combined_summary,
-        suggested_action=(
-            latest_action.description
-            if latest_action.requires_action
-            else None
-        ),
-        needs_review=any(
-            message["priority_result"].needs_review
-            or message["action_result"].needs_review
-            for message in messages
-        ),
+
+        action_status=resolved_action.status,
+        requires_action=resolved_action.requires_action,
+        suggested_action=resolved_action.current_action,
+        action_reason=resolved_action.reason,
+
+        needs_review=needs_review,
+
         gmail_url=(
             "https://mail.google.com/mail/u/0/"
             f"#all/{thread_id}"
-        )
+        ),
     )

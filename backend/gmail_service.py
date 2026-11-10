@@ -87,15 +87,18 @@ def get_recent_emails():
         body = extract_email_body(email.get("payload", {}))
         clean_body = clean_email_text(body)
         emails.append({
-            "id": email["id"],
-            "thread_id": email["threadId"],
-            "received_at_ms": received_ms,
-            "sender": get_header("From"),
-            "subject": get_header("Subject"),
-            "date": get_header("Date"),
-            "snippet": email.get("snippet", ""),
-            "body": clean_body
-        })
+        "id": email["id"],
+        "thread_id": email["threadId"],
+        "received_at_ms": received_ms,
+        "sender": get_header("From"),
+        "subject": get_header("Subject"),
+        "date": get_header("Date"),
+        "snippet": email.get("snippet", ""),
+        "body": clean_body,
+        "has_list_unsubscribe": bool(
+            get_header("List-Unsubscribe")
+        ),
+    })
 
 
     return emails
