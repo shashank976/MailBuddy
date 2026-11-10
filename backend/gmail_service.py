@@ -89,11 +89,13 @@ def get_recent_emails():
         emails.append({
             "id": email["id"],
             "thread_id": email["threadId"],
+            "received_at_ms": received_ms,
             "sender": get_header("From"),
             "subject": get_header("Subject"),
             "date": get_header("Date"),
             "snippet": email.get("snippet", ""),
             "body": clean_body
         })
+
 
     return emails
