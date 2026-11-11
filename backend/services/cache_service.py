@@ -18,13 +18,16 @@ from agents.conversation_action_resolver import ConversationAction
 BASE_DIR = Path(__file__).resolve().parent.parent
 DB_PATH = BASE_DIR / "mailbuddy.db"
 
-# Increment these whenever analysis behavior changes.
-MESSAGE_VERSION = "message-v1"
-CONVERSATION_VERSION = "conversation-v1"
+# Increment whenever analysis logic or prompts change.
+MESSAGE_VERSION = "message-v5"
+CONVERSATION_VERSION = "conversation-v2"
+
+# Use the same model configured in the agents.
+MODEL = os.getenv("OLLAMA_MODEL", "qwen3:4b-instruct")
 
 
 def fingerprint(data: dict) -> str:
-    """Create a stable SHA-256 hash from input data."""
+    """Generate a stable SHA-256 fingerprint."""
 
     serialized = json.dumps(
         data,
@@ -39,7 +42,7 @@ def fingerprint(data: dict) -> str:
 
 
 def get_connection():
-    """Open a short-lived SQLite connection."""
+    """Create a short-lived SQLite connection."""
 
     connection = sqlite3.connect(
         DB_PATH,
@@ -53,12 +56,10 @@ def get_connection():
 
 
 def initialize_database():
-    """Create local cache tables and indexes."""
+    """Create cache tables and indexes if needed."""
 
     with get_connection() as connection:
-        connection.execute(
-            "PRAGMA journal_mode = WAL"
-        )
+        connection.execute("PRAGMA journal_mode = WAL")
 
         connection.execute("""
             CREATE TABLE IF NOT EXISTS message_cache (
@@ -97,13 +98,13 @@ def message_cache_key(
     user_priorities: str,
 ) -> str:
     """
-    Include content and user priorities so a
-    change in either invalidates the cache.
+    Generate a key based on the email content,
+    user preferences, model, and analysis version.
     """
 
     return fingerprint({
         "version": MESSAGE_VERSION,
-        "model": os.getenv("OLLAMA_MODEL", "qwen3:4b"),
+        "model": MODEL,
         "message": {
             "id": email["id"],
             "thread_id": email["thread_id"],
@@ -120,8 +121,8 @@ def conversation_cache_key(
     user_priorities: str,
 ) -> str:
     """
-    Include each message's analysis and position
-    in the conversation timeline.
+    Generate a fingerprint from the entire
+    conversation timeline and its analyses.
     """
 
     timeline = []
@@ -148,14 +149,14 @@ def conversation_cache_key(
 
     return fingerprint({
         "version": CONVERSATION_VERSION,
-        "model": os.getenv("OLLAMA_MODEL", "qwen3:4b"),
+        "model": MODEL,
         "user_priorities": user_priorities,
         "timeline": timeline,
     })
 
 
 def load_message_analysis(key: str):
-    """Return cached Pydantic objects or None."""
+    """Return cached analysis or None."""
 
     with get_connection() as connection:
         row = connection.execute(
@@ -195,7 +196,7 @@ def save_message_analysis(
     message_id: str,
     result: dict,
 ):
-    """Persist validated message analysis."""
+    """Save structured message analysis to SQLite."""
 
     payload = {
         "priority_result": (
@@ -228,7 +229,7 @@ def save_message_analysis(
 
 
 def load_conversation_analysis(key: str):
-    """Return (summary, action) or None."""
+    """Return cached (summary, action) or None."""
 
     with get_connection() as connection:
         row = connection.execute(
@@ -264,7 +265,7 @@ def save_conversation_analysis(
     summary: str,
     action: ConversationAction,
 ):
-    """Persist completed conversation analysis."""
+    """Save conversation-level results to SQLite."""
 
     summary_model = ConversationSummary(
         summary=summary

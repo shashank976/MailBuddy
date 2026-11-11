@@ -14,7 +14,7 @@ from pydantic import (
 )
 
 
-MODEL = os.getenv("OLLAMA_MODEL", "qwen3:4b")
+MODEL = os.getenv("OLLAMA_MODEL", "qwen3:4b-instruct")
 
 client = Client(
     host="http://127.0.0.1:11434",
@@ -346,6 +346,7 @@ def resolve_conversation_actions(
         options={
             "temperature": 0,
         },
+        keep_alive="30m",
     )
 
     # Validate the model's structured response.

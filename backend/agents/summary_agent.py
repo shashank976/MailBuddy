@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from schemas.priority import EmailPriority
 
 
-MODEL = os.getenv("OLLAMA_MODEL", "qwen3:4b")
+MODEL = os.getenv("OLLAMA_MODEL", "qwen3:4b-instruct")
 
 client = Client(
     host="http://127.0.0.1:11434",
@@ -123,7 +123,8 @@ RULES:
         ],
         format=ConversationSummary.model_json_schema(),
         think=False,
-        options={"temperature": 0}
+        options={"temperature": 0},
+        keep_alive="30m",
     )
 
     result = ConversationSummary.model_validate_json(
