@@ -1,23 +1,40 @@
 # Python
 backend/.venv/
+.venv/
 __pycache__/
 *.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
-# Gmail credentials
+# Gmail OAuth credentials
 credentials.json
 token.json
+*credentials*.json
+*token*.json
 
 # Environment variables
 .env
 .env.*
+!.env.example
 
 # Frontend
 node_modules/
 dist/
+frontend/node_modules/
+frontend/dist/
 
 # macOS
 .DS_Store
 
-# Local user data
+# Local databases and email data
 *.db
+*.db-wal
+*.db-shm
+*.sqlite
 *.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+
+# Local logs
+*.log
