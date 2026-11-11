@@ -17,7 +17,7 @@ from services.dashboard_store import (
     save_dashboard_cards,
 )
 from workflows.inbox_workflow import analyze_inbox
-
+from services.reset_service import reset_mailbuddy_data
 
 logging.basicConfig(
     level=logging.INFO,
@@ -362,6 +362,55 @@ def analyze(request: AnalyzeRequest):
                 "Previously completed batches "
                 "remain saved locally."
             ),
+        ) from None
+
+    finally:
+        scan_lock.release()
+
+
+@app.post("/reset")
+def reset_mailbuddy():
+    """
+    Clear local analysis cache and dashboard.
+
+    Refuse to reset while an inbox scan is running.
+    """
+
+    if not scan_lock.acquire(blocking=False):
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot reset while an inbox scan is running.",
+        )
+
+    try:
+        reset_mailbuddy_data()
+
+        update_progress(
+            status="idle",
+            stage="idle",
+            total_batches=0,
+            completed_batches=0,
+            total_conversations=0,
+            processed_conversations=0,
+            messages_processed=0,
+            elapsed_seconds=0.0,
+        )
+
+        logger.info(
+            "MailBuddy local cache and dashboard cleared."
+        )
+
+        return {
+            "status": "reset",
+            "message": "Local cache and dashboard cleared.",
+        }
+
+    except Exception:
+        logger.exception("MailBuddy reset failed")
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to reset local MailBuddy data.",
         ) from None
 
     finally:

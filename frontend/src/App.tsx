@@ -30,6 +30,7 @@ import type {
 } from "./types";
 
 import "./styles.css";
+import { resetMailBuddy } from "./api";
 
 const DEFAULT_PRIORITIES =
   "Prioritize recruiting emails, software engineering internships, " +
@@ -50,27 +51,27 @@ const GROUPS: {
   label: string;
   description: string;
 }[] = [
-  {
-    id: "needs_attention",
-    label: "Needs Attention",
-    description: "May require a response or review",
-  },
-  {
-    id: "important_updates",
-    label: "Important Updates",
-    description: "Worth checking",
-  },
-  {
-    id: "low_priority",
-    label: "Low Priority",
-    description: "Can wait",
-  },
-  {
-    id: "cleanup",
-    label: "Cleanup",
-    description: "Potential archive or unsubscribe",
-  },
-];
+    {
+      id: "needs_attention",
+      label: "Needs Attention",
+      description: "May require a response or review",
+    },
+    {
+      id: "important_updates",
+      label: "Important Updates",
+      description: "Worth checking",
+    },
+    {
+      id: "low_priority",
+      label: "Low Priority",
+      description: "Can wait",
+    },
+    {
+      id: "cleanup",
+      label: "Cleanup",
+      description: "Potential archive or unsubscribe",
+    },
+  ];
 
 function formatDate(timestamp: number): string {
   return new Date(timestamp).toLocaleDateString(
@@ -125,20 +126,20 @@ function getInitialSettings(): AnalyzeRequest {
     return {
       hours:
         typeof parsed.hours === "number" &&
-        [24, 48, 72, 168].includes(parsed.hours)
+          [24, 48, 72, 168].includes(parsed.hours)
           ? parsed.hours
           : DEFAULT_SETTINGS.hours,
 
       max_threads:
         typeof parsed.max_threads === "number" &&
-        [5, 10, 20, 50].includes(parsed.max_threads)
+          [5, 10, 20, 50].includes(parsed.max_threads)
           ? parsed.max_threads
           : DEFAULT_SETTINGS.max_threads,
 
       max_workers:
         typeof parsed.max_workers === "number" &&
-        parsed.max_workers >= 1 &&
-        parsed.max_workers <= 4
+          parsed.max_workers >= 1 &&
+          parsed.max_workers <= 4
           ? parsed.max_workers
           : DEFAULT_SETTINGS.max_workers,
 
@@ -207,9 +208,8 @@ function ConversationRow({
   return (
     <button
       type="button"
-      className={`conversation-row ${
-        selected ? "selected" : ""
-      }`}
+      className={`conversation-row ${selected ? "selected" : ""
+        }`}
       onClick={onSelect}
       aria-pressed={selected}
     >
@@ -413,8 +413,8 @@ function ConversationDetails({
                   {cleanup.action === "keep"
                     ? "Keep conversation"
                     : cleanup.action === "archive"
-                    ? "Suggest archive"
-                    : "Suggest unsubscribe"}
+                      ? "Suggest archive"
+                      : "Suggest unsubscribe"}
                 </strong>
               </div>
 
@@ -642,6 +642,46 @@ function App() {
     setSettingsOpen(false);
   }
 
+  const [resetting, setResetting] = useState(false);
+
+  async function handleReset() {
+    if (resetting || analyzing || loading) return;
+
+    const confirmed = window.confirm(
+      "Clear all MailBuddy analysis history and empty the dashboard?\n\n" +
+      "This deletes local AI cache results but does NOT delete " +
+      "your Gmail messages or saved preferences."
+    );
+
+    if (!confirmed) return;
+
+    setResetting(true);
+    setError(null);
+
+    try {
+      await resetMailBuddy();
+
+      // Clear all displayed conversations immediately.
+      setCards([]);
+      setLastAnalyzed(null);
+      setSelectedId(null);
+      setFilter("all");
+      setSearch("");
+
+      // Refresh backend health.
+      const updatedHealth = await api.health();
+      setHealth(updatedHealth);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to reset MailBuddy."
+      );
+    } finally {
+      setResetting(false);
+    }
+  }
+
   const attentionCount =
     counts.needs_attention;
 
@@ -657,11 +697,10 @@ function App() {
 
           <button
             type="button"
-            className={`nav-item ${
-              filter === "all"
+            className={`nav-item ${filter === "all"
                 ? "active"
                 : ""
-            }`}
+              }`}
             onClick={() => {
               setFilter("all");
               setSelectedId(null);
@@ -678,11 +717,10 @@ function App() {
             <button
               type="button"
               key={group.id}
-              className={`nav-item ${
-                filter === group.id
+              className={`nav-item ${filter === group.id
                   ? "active"
                   : ""
-              }`}
+                }`}
               onClick={() => {
                 setFilter(group.id);
                 setSelectedId(null);
@@ -731,11 +769,10 @@ function App() {
 
           <div className="topbar-right">
             <span
-              className={`connection-indicator ${
-                health?.ollama_available
+              className={`connection-indicator ${health?.ollama_available
                   ? "connected"
                   : ""
-              }`}
+                }`}
             />
 
             <span>
@@ -763,12 +800,11 @@ function App() {
                 {cards.length === 0
                   ? "Your conversations will appear here after a scan."
                   : attentionCount > 0
-                  ? `${attentionCount} conversation${
-                      attentionCount === 1
-                        ? ""
-                        : "s"
+                    ? `${attentionCount} conversation${attentionCount === 1
+                      ? ""
+                      : "s"
                     } flagged for attention.`
-                  : "Nothing currently flagged for attention."}
+                    : "Nothing currently flagged for attention."}
               </p>
 
               <div className="scan-metadata">
@@ -777,8 +813,8 @@ function App() {
                 <span>
                   {lastAnalyzed
                     ? `Last scan: ${new Date(
-                        lastAnalyzed
-                      ).toLocaleString()}`
+                      lastAnalyzed
+                    ).toLocaleString()}`
                     : "Not scanned yet"}
                 </span>
               </div>
@@ -824,11 +860,10 @@ function App() {
               <button
                 key={group.id}
                 type="button"
-                className={`overview-item ${
-                  filter === group.id
+                className={`overview-item ${filter === group.id
                     ? "active"
                     : ""
-                }`}
+                  }`}
                 onClick={() => {
                   setFilter(group.id);
                   setSelectedId(null);
@@ -900,15 +935,16 @@ function App() {
                 <button
                   type="button"
                   className="filter-button"
-                  onClick={() => {
-                    setFilter("all");
-                    setSearch("");
-                    setSelectedId(null);
-                  }}
-                  title="Clear filters"
+                  onClick={handleReset}
+                  disabled={resetting || analyzing || loading}
+                  title="Clear saved dashboard and AI cache"
                 >
-                  <ArrowDownToLine size={16} />
-                  Reset
+                  {resetting ? (
+                    <LoaderCircle size={16} className="spin" />
+                  ) : (
+                    <ArrowDownToLine size={16} />
+                  )}
+                  {resetting ? "Resetting..." : "Reset"}
                 </button>
               </div>
             </div>

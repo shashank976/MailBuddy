@@ -58,3 +58,23 @@ export const api = {
       body: JSON.stringify(settings),
     }),
 };
+
+export async function resetMailBuddy(): Promise<void> {
+  const baseUrl =
+    import.meta.env.VITE_API_URL ||
+    "http://127.0.0.1:8000";
+
+  const response = await fetch(`${baseUrl}/reset`, {
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    let message = "Failed to reset MailBuddy.";
+
+    if (response.status === 409) {
+      message = "Wait for the current scan to finish.";
+    }
+
+    throw new Error(message);
+  }
+}
