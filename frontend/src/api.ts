@@ -78,3 +78,64 @@ export async function resetMailBuddy(): Promise<void> {
     throw new Error(message);
   }
 }
+
+
+export type MailBuddyFeedback = {
+  thread_id: string;
+  priority: "critical" | "high" | "medium" | "low";
+  category:
+    | "career"
+    | "academics"
+    | "personal"
+    | "financial"
+    | "security"
+    | "news"
+    | "promotion"
+    | "social"
+    | "other";
+  note: string;
+  remember_preference: boolean;
+};
+
+const feedbackBaseUrl =
+  import.meta.env.VITE_API_URL ||
+  "http://127.0.0.1:8000";
+
+export async function loadFeedback(
+  threadId: string
+): Promise<MailBuddyFeedback | null> {
+  const response = await fetch(
+    `${feedbackBaseUrl}/feedback/${encodeURIComponent(threadId)}`
+  );
+
+  if (!response.ok) {
+    throw new Error("Could not load feedback.");
+  }
+
+  return response.json();
+}
+
+export async function submitFeedback(
+  data: MailBuddyFeedback
+): Promise<void> {
+  const response = await fetch(
+    `${feedbackBaseUrl}/feedback`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(data),
+    }
+  );
+
+  if (!response.ok) {
+    const result = await response.json().catch(() => null);
+
+    throw new Error(
+      typeof result?.detail === "string"
+        ? result.detail
+        : "Could not save feedback."
+    );
+  }
+}

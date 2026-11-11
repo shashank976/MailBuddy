@@ -82,19 +82,15 @@ def parse_gmail_message(message: dict) -> dict:
         "id": message["id"],
         "thread_id": message["threadId"],
         "received_at_ms": int(message["internalDate"]),
-
         "sender": get_header(payload, "From"),
         "recipient": get_header(payload, "To"),
         "subject": get_header(payload, "Subject"),
         "date": get_header(payload, "Date"),
-
         "snippet": message.get("snippet", ""),
         "body": cleaned_body,
-
         "is_sent": "SENT" in labels,
         "is_unread": "UNREAD" in labels,
         "label_ids": labels,
-
         "has_list_unsubscribe": bool(
             get_header(payload, "List-Unsubscribe")
         ),
@@ -103,36 +99,39 @@ def parse_gmail_message(message: dict) -> dict:
 
 def get_recent_threads(
     hours: int = 24,
-    max_threads: int = 20,
+    max_threads: int | None = None,
     service=None,
 ) -> list[dict]:
     """
-    Discover Gmail conversations with activity
-    in the last `hours`, then retrieve their
-    complete available message histories.
+    Find Gmail threads with activity in the requested
+    time window and retrieve their complete histories.
 
-    Returns one dictionary per conversation,
-    containing a list of parsed messages.
+    max_threads=None means fetch all matching threads.
 
-    Does not modify Gmail.
+    This function only reads Gmail. It does not
+    delete, archive, or modify messages.
     """
 
     if hours <= 0:
         raise ValueError("hours must be positive")
 
-    if max_threads <= 0:
-        raise ValueError("max_threads must be positive")
+    if max_threads is not None and max_threads <= 0:
+        raise ValueError(
+            "max_threads must be positive or None"
+        )
 
     if service is None:
         service = authenticate_gmail()
 
-    cutoff = datetime.now(timezone.utc) - timedelta(
-        hours=hours
+    cutoff = (
+        datetime.now(timezone.utc)
+        - timedelta(hours=hours)
     )
 
-    # Search by the recent-activity window.
-    # Older messages in matching threads will
-    # still be retrieved through threads.get().
+    cutoff_ms = int(cutoff.timestamp() * 1000)
+
+    # Unix timestamps provide an exact rolling
+    # time window rather than calendar-day boundaries.
     query = f"after:{int(cutoff.timestamp())}"
 
     discovered = []
@@ -140,13 +139,28 @@ def get_recent_threads(
 
     page_token = None
 
-    while len(discovered) < max_threads:
-        remaining = max_threads - len(discovered)
+    # -----------------------------------
+    # DISCOVER ALL MATCHING THREADS
+    # -----------------------------------
+
+    while True:
+        remaining = (
+            None
+            if max_threads is None
+            else max_threads - len(discovered)
+        )
+
+        if remaining is not None and remaining <= 0:
+            break
 
         params = {
             "userId": "me",
             "q": query,
-            "maxResults": min(remaining, 100),
+            "maxResults": (
+                100
+                if remaining is None
+                else min(remaining, 100)
+            ),
         }
 
         if page_token:
@@ -160,19 +174,39 @@ def get_recent_threads(
         )
 
         for item in response.get("threads", []):
-            thread_id = item["id"]
+            thread_id = item.get("id")
 
-            if thread_id not in seen_thread_ids:
-                seen_thread_ids.add(thread_id)
-                discovered.append(thread_id)
+            if not thread_id:
+                continue
 
-            if len(discovered) >= max_threads:
+            if thread_id in seen_thread_ids:
+                continue
+
+            seen_thread_ids.add(thread_id)
+            discovered.append(thread_id)
+
+            if (
+                max_threads is not None
+                and len(discovered) >= max_threads
+            ):
                 break
 
-        page_token = response.get("nextPageToken")
-
-        if not page_token:
+        if (
+            max_threads is not None
+            and len(discovered) >= max_threads
+        ):
             break
+
+        next_page_token = response.get("nextPageToken")
+
+        if not next_page_token:
+            break
+
+        page_token = next_page_token
+
+    # -----------------------------------
+    # FETCH COMPLETE THREAD HISTORIES
+    # -----------------------------------
 
     conversations = []
 
@@ -198,17 +232,13 @@ def get_recent_threads(
         if not parsed_messages:
             continue
 
-        # Do not depend on the API response order.
         parsed_messages.sort(
             key=lambda item: item["received_at_ms"]
         )
 
-        # Keep the actual message-level timestamps.
-        # Only include threads with activity during
-        # our requested time window.
-        if parsed_messages[-1]["received_at_ms"] < int(
-            cutoff.timestamp() * 1000
-        ):
+        # Keep complete histories, but only include
+        # conversations containing recent activity.
+        if parsed_messages[-1]["received_at_ms"] < cutoff_ms:
             continue
 
         conversations.append({
@@ -231,18 +261,18 @@ def get_recent_threads(
 
 def get_recent_emails(
     hours: int = 24,
-    max_threads: int = 20,
+    max_threads: int | None = 20,
 ) -> list[dict]:
     """
-    Compatibility wrapper for the existing
-    /emails endpoint.
+    Compatibility wrapper.
 
-    Returns individual recent messages, not
-    complete conversations.
+    Return individual recent messages, not
+    complete conversation histories.
     """
 
-    cutoff = datetime.now(timezone.utc) - timedelta(
-        hours=hours
+    cutoff = (
+        datetime.now(timezone.utc)
+        - timedelta(hours=hours)
     )
 
     cutoff_ms = int(cutoff.timestamp() * 1000)

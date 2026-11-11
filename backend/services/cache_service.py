@@ -19,7 +19,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DB_PATH = BASE_DIR / "mailbuddy.db"
 
 # Increment whenever analysis logic or prompts change.
-MESSAGE_VERSION = "message-v5"
+MESSAGE_VERSION = "message-v7"
 CONVERSATION_VERSION = "conversation-v2"
 
 # Use the same model configured in the agents.

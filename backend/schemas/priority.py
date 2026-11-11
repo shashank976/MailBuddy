@@ -205,6 +205,7 @@ class EmailPriority(BaseModel):
     # LOGICAL VALIDATION
     # -----------------------------------
 
+    
     @model_validator(mode="after")
     def validate_consistency(self):
 
@@ -214,21 +215,28 @@ class EmailPriority(BaseModel):
         if self.action_type == "none":
             self.suggested_action = ""
 
-        # An actionable email must have a real,
-        # specific instruction.
+        # An actionable email must have a specific
+        # instruction, or it needs human review.
         elif action_text in NO_ACTION_VALUES:
             self.suggested_action = ""
             self.needs_review = True
 
-        # No evidence means we cannot verify
-        # the classification confidently.
-        if not self.evidence:
+        # Missing evidence matters most when
+        # the classification is consequential.
+        # Routine informational/promotional emails
+        # should not require review solely because
+        # evidence is absent.
+        if (
+            not self.evidence
+            and (
+                self.priority in {"critical", "high"}
+                or self.action_type != "none"
+            )
+        ):
             self.needs_review = True
 
-        # If the model assigns immediate urgency
-        # without any action, require review.
-        # This does not automatically override
-        # the model's classification.
+        # Immediate urgency with no action
+        # is potentially inconsistent.
         if (
             self.urgency == "immediate"
             and self.action_type == "none"
@@ -236,3 +244,4 @@ class EmailPriority(BaseModel):
             self.needs_review = True
 
         return self
+

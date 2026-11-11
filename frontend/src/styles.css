@@ -1359,3 +1359,233 @@ a {
     padding: 20px;
   }
 }
+
+
+.feedback-section {
+  border-top: 1px solid var(--border);
+  padding-top: 20px;
+}
+
+.feedback-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.feedback-form > label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.feedback-form select,
+.feedback-form textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.feedback-form textarea {
+  resize: vertical;
+}
+
+.feedback-form .feedback-checkbox {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.feedback-checkbox input {
+  margin-top: 3px;
+  accent-color: var(--pink);
+}
+
+.feedback-error {
+  color: #ff9caa;
+  font-size: 13px;
+}
+
+
+.profile-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  margin-bottom: 24px;
+}
+
+.profile-intro h3 {
+  margin: 0 0 6px;
+  color: #f8eaf2;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.profile-intro p {
+  margin: 0;
+  color: #af9fae;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.profile-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.profile-field label {
+  color: #f4dce8;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.profile-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 86px;
+  padding: 12px 13px;
+  resize: vertical;
+  background: #19131d;
+  border: 1px solid #403043;
+  border-radius: 10px;
+  color: #f8eaf2;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.55;
+  outline: none;
+}
+
+.profile-field textarea:focus {
+  border-color: #f56da5;
+  box-shadow: 0 0 0 2px rgba(245, 109, 165, 0.12);
+}
+
+.profile-field textarea::placeholder {
+  color: #796a7a;
+}
+
+.profile-field .field-description {
+  margin: 0;
+  color: #9e8e9e;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.optional-label {
+  color: #98889a;
+  font-weight: 400;
+}
+
+.profile-memory-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 13px 14px;
+  background: #211728;
+  border: 1px solid #443047;
+  border-radius: 10px;
+}
+
+.profile-memory-note span {
+  color: #f56da5;
+}
+
+.profile-memory-note p {
+  margin: 0;
+  color: #cbb7c7;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.settings-modal {
+  max-height: 88vh;
+  overflow-y: auto;
+}
+
+
+
+/* ----------------------------------
+   SCAN PROGRESS
+---------------------------------- */
+
+.scan-progress-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 22px;
+  padding: 18px 20px;
+  background: #19131d;
+  border: 1px solid #403043;
+  border-radius: 12px;
+}
+
+.scan-progress-heading,
+.scan-progress-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.scan-progress-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #f4dce8;
+  font-size: 14px;
+}
+
+.scan-progress-title svg {
+  color: #f56da5;
+}
+
+.scan-progress-heading > span {
+  color: #cbb7c7;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.scan-progress-track {
+  width: 100%;
+  height: 7px;
+  overflow: hidden;
+  background: #302235;
+  border-radius: 999px;
+}
+
+.scan-progress-fill {
+  height: 100%;
+  background: #f56da5;
+  border-radius: inherit;
+  transition: width 250ms ease;
+}
+
+.scan-progress-footer {
+  color: #a99aaa;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 600px) {
+  .scan-progress-panel {
+    padding: 14px;
+  }
+
+  .scan-progress-footer {
+    font-size: 11px;
+  }
+}
+

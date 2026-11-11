@@ -39,6 +39,37 @@ def cache_debug(message: str):
         print(message, flush=True)
 
 
+def choose_dashboard_group(card) -> str:
+    """
+    Decide where a conversation belongs.
+
+    Review flags remain visible on the card but
+    do not automatically make low-priority mail
+    require attention.
+    """
+
+    priority = card.priority
+
+    # Low-value emails are filtered from the
+    # main inbox, even when their evidence
+    # could not be verified.
+    if priority == "low":
+        return "cleanup"
+
+    # Important conversations needing action.
+    if card.requires_action:
+        return "needs_attention"
+
+    # Don't bury potentially important uncertain
+    # messages in the informational section.
+    if priority in {"critical", "high"} and card.needs_review:
+        return "needs_attention"
+
+    # Everything else is informational.
+    return "important_updates"
+
+
+
 def make_initial_state(
     email: dict,
     user_priorities: str,
@@ -323,8 +354,6 @@ def analyze_inbox(
 
         if summary_failed or action_failed:
             card.needs_review = True
-            card.dashboard_group = "needs_attention"
-
         # -----------------------------------------
         # STEP 6: SAFE CLEANUP RECOMMENDATIONS
         # -----------------------------------------
@@ -347,15 +376,9 @@ def analyze_inbox(
 
         card.cleanup = recommendation
 
-        if recommendation.action in {
-            "archive",
-            "unsubscribe",
-        }:
-            card.dashboard_group = "cleanup"
-
-        elif card.dashboard_group == "cleanup":
-            card.dashboard_group = "low_priority"
-
+        # Keep cleanup suggestions, but determine
+        # dashboard placement independently.
+        card.dashboard_group = choose_dashboard_group(card)
         cards.append(card)
 
     return cards

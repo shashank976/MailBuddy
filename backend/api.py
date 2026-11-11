@@ -1,6 +1,5 @@
 
 import logging
-import math
 import threading
 import time
 import urllib.error
@@ -16,8 +15,19 @@ from services.dashboard_store import (
     load_dashboard_cards,
     save_dashboard_cards,
 )
-from workflows.inbox_workflow import analyze_inbox
 from services.reset_service import reset_mailbuddy_data
+from services.feedback_service import (
+    save_feedback,
+    get_feedback,
+    get_learned_preferences,
+    apply_feedback,
+)
+from workflows.inbox_workflow import analyze_inbox
+
+
+# -----------------------------------
+# LOGGING
+# -----------------------------------
 
 logging.basicConfig(
     level=logging.INFO,
@@ -25,6 +35,23 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger("mailbuddy.api")
+
+
+# -----------------------------------
+# INTERNAL SCAN CONFIGURATION
+# -----------------------------------
+
+# These are implementation settings, not
+# preferences the user needs to configure.
+
+SCAN_HOURS = 24
+BATCH_SIZE = 5
+MAX_WORKERS = 2
+
+
+# -----------------------------------
+# FASTAPI
+# -----------------------------------
 
 app = FastAPI(
     title="MailBuddy API",
@@ -45,6 +72,11 @@ app.add_middleware(
     allow_headers=["Content-Type"],
 )
 
+
+# -----------------------------------
+# LOCKS AND SCAN PROGRESS
+# -----------------------------------
+
 scan_lock = threading.Lock()
 progress_lock = threading.Lock()
 
@@ -60,42 +92,6 @@ scan_progress = {
 }
 
 
-class AnalyzeRequest(BaseModel):
-    hours: int = Field(
-        default=24,
-        ge=1,
-        le=168,
-    )
-
-    max_threads: int = Field(
-        default=5,
-        ge=1,
-        le=100,
-    )
-
-    max_workers: int = Field(
-        default=1,
-        ge=1,
-        le=4,
-    )
-
-    batch_size: int = Field(
-        default=5,
-        ge=1,
-        le=20,
-    )
-
-    user_priorities: str = Field(
-        default=(
-            "Prioritize emails requiring a reply, "
-            "important deadlines, security alerts, "
-            "and relevant personal updates. "
-            "Treat routine promotions as low priority."
-        ),
-        max_length=2000,
-    )
-
-
 def update_progress(**changes):
     with progress_lock:
         scan_progress.update(changes)
@@ -105,6 +101,77 @@ def get_progress_snapshot():
     with progress_lock:
         return dict(scan_progress)
 
+
+# -----------------------------------
+# REQUEST SCHEMAS
+# -----------------------------------
+
+class AnalyzeRequest(BaseModel):
+    """
+    The frontend sends personalized context.
+
+    Legacy scan settings are accepted for
+    compatibility but deliberately ignored.
+    The backend controls scan performance.
+    """
+
+    user_priorities: str = Field(
+        default="",
+        max_length=6000,
+    )
+
+    hours: int | None = Field(
+        default=None,
+        ge=1,
+        le=168,
+    )
+
+    max_threads: int | None = Field(
+        default=None,
+        ge=1,
+    )
+
+    max_workers: int | None = Field(
+        default=None,
+        ge=1,
+        le=4,
+    )
+
+    batch_size: int | None = Field(
+        default=None,
+        ge=1,
+        le=20,
+    )
+
+
+class FeedbackRequest(BaseModel):
+    thread_id: str = Field(
+        min_length=1,
+        max_length=255,
+    )
+
+    priority: str = Field(
+        pattern="^(critical|high|medium|low)$"
+    )
+
+    category: str = Field(
+        pattern=(
+            "^(career|academics|personal|financial|"
+            "security|news|promotion|social|other)$"
+        )
+    )
+
+    note: str = Field(
+        default="",
+        max_length=500,
+    )
+
+    remember_preference: bool = False
+
+
+# -----------------------------------
+# OLLAMA HEALTH
+# -----------------------------------
 
 def check_ollama() -> bool:
     try:
@@ -127,6 +194,10 @@ def check_ollama() -> bool:
         return False
 
 
+# -----------------------------------
+# BASIC ROUTES
+# -----------------------------------
+
 @app.get("/")
 def root():
     return {
@@ -148,13 +219,24 @@ def health():
 
 @app.get("/conversations")
 def get_conversations():
-    return load_dashboard_cards()
+    dashboard = load_dashboard_cards()
+
+    return {
+        **dashboard,
+        "cards": apply_feedback(
+            dashboard["cards"]
+        ),
+    }
 
 
 @app.get("/scan-status")
 def get_scan_status():
     return get_progress_snapshot()
 
+
+# -----------------------------------
+# ANALYZE INBOX
+# -----------------------------------
 
 @app.post("/analyze")
 def analyze(request: AnalyzeRequest):
@@ -180,16 +262,18 @@ def analyze(request: AnalyzeRequest):
 
     try:
         # -----------------------------------
-        # FETCH GMAIL
+        # FETCH ALL RECENT GMAIL CONVERSATIONS
         # -----------------------------------
 
         logger.info(
-            "[1/3] Fetching Gmail conversations..."
+            "[1/3] Fetching all Gmail conversations "
+            "from the last %d hours...",
+            SCAN_HOURS,
         )
 
         emails = load_inbox_messages(
-            hours=request.hours,
-            max_threads=request.max_threads,
+            hours=SCAN_HOURS,
+            max_threads=None,
         )
 
         logger.info(
@@ -203,7 +287,7 @@ def analyze(request: AnalyzeRequest):
 
         batches = create_thread_batches(
             emails=emails,
-            batch_size=request.batch_size,
+            batch_size=BATCH_SIZE,
         )
 
         total_batches = len(batches)
@@ -215,9 +299,10 @@ def analyze(request: AnalyzeRequest):
 
         logger.info(
             "[2/3] Processing %d conversations "
-            "in %d batches",
+            "in %d batches using %d workers",
             total_conversations,
             total_batches,
+            MAX_WORKERS,
         )
 
         update_progress(
@@ -227,18 +312,39 @@ def analyze(request: AnalyzeRequest):
             messages_processed=len(emails),
         )
 
-        all_cards = []
-        processed_conversations = 0
+        # -----------------------------------
+        # PREPARE PERSONALIZED CONTEXT
+        # -----------------------------------
+
+        # The frontend supplies the profile.
+        effective_priorities = request.user_priorities
+
+        # Feedback preferences are explicitly
+        # approved by the user and stored locally.
+        learned = get_learned_preferences()
+
+        if learned:
+            feedback_context = (
+                "\n\nADDITIONAL SAVED USER PREFERENCES:\n"
+                + "\n".join(
+                    f"- {preference}"
+                    for preference in learned
+                )
+            )
+
+            effective_priorities += feedback_context
 
         # -----------------------------------
-        # SEQUENTIAL BATCH PROCESSING
+        # PROCESS BATCHES
         # -----------------------------------
+
+        all_cards = []
+        processed_conversations = 0
 
         for batch_index, batch in enumerate(
             batches,
             start=1,
         ):
-
             batch_start = time.perf_counter()
 
             batch_thread_count = len({
@@ -255,25 +361,21 @@ def analyze(request: AnalyzeRequest):
                 len(batch),
             )
 
-            # Reuse existing LangGraph workflow,
-            # cache, agents, and user preferences.
             cards = analyze_inbox(
                 emails=batch,
-                user_priorities=request.user_priorities,
-                max_workers=request.max_workers,
+                user_priorities=effective_priorities,
+                max_workers=MAX_WORKERS,
             )
 
-            # Do not change cards returned
-            # by the existing workflow.
             all_cards.extend(cards)
 
             processed_conversations += (
                 batch_thread_count
             )
 
-            # Save after every successful batch.
-            # Earlier completed batches survive
-            # a failure in a later batch.
+            # Persist after every successful batch.
+            # A failure in a later batch does not
+            # erase earlier completed results.
             save_dashboard_cards(all_cards)
 
             elapsed = time.perf_counter() - start_time
@@ -296,12 +398,13 @@ def analyze(request: AnalyzeRequest):
             )
 
         # -----------------------------------
-        # FINISH
+        # FINISH SCAN
         # -----------------------------------
 
         update_progress(stage="saving")
 
-        # Handle empty inboxes as well.
+        # Also saves an empty dashboard when
+        # no conversations match the time window.
         analyzed_at = save_dashboard_cards(
             all_cards
         )
@@ -331,13 +434,11 @@ def analyze(request: AnalyzeRequest):
             "last_analyzed_at": analyzed_at,
             "messages_processed": len(emails),
             "conversation_count": len(all_cards),
-            "cards": all_cards,
+            "cards": apply_feedback(all_cards),
         }
 
-    except Exception as error:
+    except Exception:
         elapsed = time.perf_counter() - start_time
-
-        previous = get_progress_snapshot()
 
         update_progress(
             status="failed",
@@ -345,15 +446,10 @@ def analyze(request: AnalyzeRequest):
             elapsed_seconds=round(elapsed, 2),
         )
 
-        # Avoid logging private email content.
-        logger.error(
-            "Inbox scan failed: %s after %.2fs. "
-            "Completed batches: %d/%d",
-            type(error).__name__,
-            elapsed,
-            previous["completed_batches"],
-            previous["total_batches"],
-        )
+        # Local development diagnostic.
+        # Production logging should be configured
+        # to avoid exposing sensitive email content.
+        logger.exception("Inbox scan failed")
 
         raise HTTPException(
             status_code=500,
@@ -368,18 +464,26 @@ def analyze(request: AnalyzeRequest):
         scan_lock.release()
 
 
+# -----------------------------------
+# RESET
+# -----------------------------------
+
 @app.post("/reset")
 def reset_mailbuddy():
     """
     Clear local analysis cache and dashboard.
 
-    Refuse to reset while an inbox scan is running.
+    Preserve Gmail messages, OAuth credentials,
+    user feedback, and saved preferences.
     """
 
     if not scan_lock.acquire(blocking=False):
         raise HTTPException(
             status_code=409,
-            detail="Cannot reset while an inbox scan is running.",
+            detail=(
+                "Cannot reset while an inbox "
+                "scan is running."
+            ),
         )
 
     try:
@@ -402,7 +506,9 @@ def reset_mailbuddy():
 
         return {
             "status": "reset",
-            "message": "Local cache and dashboard cleared.",
+            "message": (
+                "Local cache and dashboard cleared."
+            ),
         }
 
     except Exception:
@@ -415,3 +521,32 @@ def reset_mailbuddy():
 
     finally:
         scan_lock.release()
+
+
+# -----------------------------------
+# FEEDBACK
+# -----------------------------------
+
+@app.get("/feedback/{thread_id}")
+def read_feedback(thread_id: str):
+    return get_feedback(thread_id)
+
+
+@app.post("/feedback")
+def submit_feedback(request: FeedbackRequest):
+    try:
+        return save_feedback(
+            thread_id=request.thread_id,
+            priority=request.priority,
+            category=request.category,
+            note=request.note,
+            remember_preference=(
+                request.remember_preference
+            ),
+        )
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=str(exc),
+        ) from None
