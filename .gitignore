@@ -38,3 +38,6 @@ frontend/dist/
 
 # Local logs
 *.log
+
+# Local test reports
+.gitleaks/
